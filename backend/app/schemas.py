@@ -206,3 +206,21 @@ class OwnershipOverride(BaseModel):
     snapshot_date: date
     account_number: str
     override_pn: str
+
+
+# --- Section 1 / Admin: RMFT master CRUD -------------------------------------
+class RmftCreate(BaseModel):
+    pn: str
+    rmft_name: str
+    active: bool = True
+
+
+class RmftUpdate(BaseModel):
+    rmft_name: Optional[str] = None
+    active: Optional[bool] = None
+
+
+# --- EDC/QRIS merchant productivity ------------------------------------------
+class MerchantThresholdUpdate(BaseModel):
+    channel: str          # EDC / QRIS
+    min_productive_volume: float

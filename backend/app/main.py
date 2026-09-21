@@ -4,7 +4,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import Base, engine
 from app.routers import (
-    admin, auth, customers, funding, performance, pipeline, realization,
+    admin, auth, customers, funding, merchant, performance, pipeline, realization,
     reports, rmft, target, upload, wa,
 )
 
@@ -38,6 +38,7 @@ app.include_router(wa.router)
 app.include_router(target.router)
 app.include_router(admin.router)
 app.include_router(reports.router)
+app.include_router(merchant.router)
 
 
 @app.get("/health")

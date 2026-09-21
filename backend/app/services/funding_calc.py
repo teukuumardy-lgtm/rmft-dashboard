@@ -105,6 +105,44 @@ def _subtract(a: dict, b: dict) -> dict:
     return {k: a.get(k, 0.0) - b.get(k, 0.0) for k in ["tabungan", "giro", "deposito", "casa", "dpk"]}
 
 
+def ytd_reference_dates(db: Session, current_dates: dict[ReportType, Optional[date]]) -> dict[ReportType, Optional[date]]:
+    """YTD growth reference: for each product, the latest snapshot on/before
+    31 Dec of the year BEFORE that product's own current snapshot date —
+    mirrors the per-product date pinning already used for DTD/trend, since
+    TABUNGAN/GIRO/DEPOSITO don't necessarily share upload dates. Returns None
+    for a product with no prior-year-end data yet, which callers must surface
+    explicitly rather than silently treating as a zero baseline (constraint:
+    'Jangan menyembunyikan kondisi data yang belum lengkap')."""
+    out: dict[ReportType, Optional[date]] = {}
+    for rtype, d in current_dates.items():
+        if d is None:
+            out[rtype] = None
+            continue
+        year_end = date(d.year - 1, 12, 31)
+        out[rtype] = get_snapshot_date_on_or_before(db, rtype, year_end)
+    return out
+
+
+def top_customers_by_balance(db: Session, pn: str, as_of_dates: dict[ReportType, Optional[date]], limit: int = 10) -> list[dict]:
+    """Top N accounts by CURRENT balance for one RM's own portfolio (posisi
+    kelolaan terbesar) — a snapshot ranking of holdings, not a delta/mover
+    ranking (see top_movers for that)."""
+    rows: list[FundingSnapshot] = []
+    for rtype, d in as_of_dates.items():
+        if d is None:
+            continue
+        q = db.query(FundingSnapshot).filter(
+            FundingSnapshot.report_type == rtype, FundingSnapshot.snapshot_date == d,
+            FundingSnapshot.resolved_pn == pn,
+        )
+        rows.extend(q.all())
+    rows.sort(key=lambda r: float(r.balance_idr or 0), reverse=True)
+    return [{
+        "account_number": r.account_number, "customer": r.customer_name, "product": r.product,
+        "balance_idr": float(r.balance_idr or 0),
+    } for r in rows[:limit]]
+
+
 def compute_home_kpis(db: Session) -> dict:
     fresh = data_freshness(db)
     as_of_dates = {

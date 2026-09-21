@@ -35,6 +35,23 @@ class ReportType(str, enum.Enum):
     TABUNGAN = "TABUNGAN"    # DI319
     GIRO = "GIRO"            # DI321
     DEPOSITO = "DEPOSITO"    # CI324
+    EDC = "EDC"               # merchant EDC sales-volume export
+    QRIS = "QRIS"             # merchant QRIS sales-volume export
+
+
+class MerchantChannel(str, enum.Enum):
+    EDC = "EDC"
+    QRIS = "QRIS"
+
+
+class ProductivityStatus(str, enum.Enum):
+    """Terminal/merchant productivity for the snapshot's period, judged purely
+    on transaction/sales volume against an admin-set minimum — never on the
+    free-text 'pemrakarsa' name field (PN cross-reference decides ownership;
+    see MerchantSnapshot.resolved_pn)."""
+    PRODUKTIF = "PRODUKTIF"
+    BELUM_PRODUKTIF = "BELUM_PRODUKTIF"          # has SOME volume, below minimum
+    TIDAK_ADA_TRANSAKSI = "TIDAK_ADA_TRANSAKSI"  # zero volume this period
 
 
 class UploadStatus(str, enum.Enum):
@@ -191,6 +208,63 @@ class AccountRmftAssignment(Base):
 
     __table_args__ = (
         UniqueConstraint("snapshot_date", "account_number", name="uq_account_rmft_assignment"),
+    )
+
+
+# ---------------------------------------------------------------------------
+# EDC / QRIS merchant productivity — upload-driven, same anti-double-count
+# and PN-as-primary-key rules as funding_snapshot.
+#
+# The source files (edc_*.xlsx / qris_*.xlsx) carry a free-text RM name
+# column ('NAMA_USER_PEMRAKARSA' / 'PN_PEMRAKASA') that is NOT a reliable PN
+# and is never used to assign ownership (it is kept only as raw reference).
+# Ownership is instead resolved the same way every other product is: the
+# merchant's linked account number (NOREK/NO_REK) is looked up in
+# account_rmft_assignment for the closest snapshot date <= this file's
+# POSISI date, exactly like every DPK product. An account not found there
+# is left UNASSIGNED and surfaced to admin, never guessed from the name.
+# ---------------------------------------------------------------------------
+class MerchantThreshold(Base):
+    """Admin-editable minimum sales-volume (IDR) for a terminal/merchant to
+    count as 'produktif' this period, per channel. Seeded from the bank's
+    current policy (EDC Rp15.000.000, QRIS Rp50.000) but never hardcoded
+    into calculation code, so a policy change is an admin edit, not a
+    redeploy."""
+    __tablename__ = "merchant_threshold"
+
+    channel = Column(SAEnum(MerchantChannel), primary_key=True)
+    min_productive_volume = Column(Numeric(20, 2), nullable=False)
+    updated_by = Column(String(36), ForeignKey("users.id"), nullable=True)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+
+class MerchantSnapshot(Base):
+    __tablename__ = "merchant_snapshot"
+
+    id = Column(String(36), primary_key=True, default=gen_uuid)
+    snapshot_date = Column(Date, nullable=False, index=True)
+    channel = Column(SAEnum(MerchantChannel), nullable=False)
+    terminal_id = Column(String(40), nullable=False)   # TID (EDC) / STOREID (QRIS)
+    merchant_ref = Column(String(40), nullable=True)   # MID (EDC) / MERCHANT_PAN (QRIS)
+    merchant_name = Column(String(255), nullable=True)
+    uker_name = Column(String(120), nullable=True)
+    account_number = Column(String(40), nullable=True, index=True)  # NOREK / NO_REK
+    sales_volume = Column(Numeric(20, 2), nullable=False, default=0)
+    status_raw = Column(String(40), nullable=True)      # QRIS 'STATUS' column (e.g. AKTIF); EDC has none
+    pemrakarsa_raw = Column(String(255), nullable=True)  # raw name column — reference only, never matched on
+
+    resolved_pn = Column(String(8), ForeignKey("rmft_master.pn"), nullable=True, index=True)
+    resolved_rmft = Column(String(120), nullable=True)
+    ownership_matched = Column(Boolean, default=False)  # True only if account_number resolved via account_rmft_assignment
+
+    productivity_status = Column(SAEnum(ProductivityStatus), nullable=False, default=ProductivityStatus.TIDAK_ADA_TRANSAKSI)
+    upload_batch_id = Column(String(36), ForeignKey("upload_batch.batch_id"), nullable=False)
+
+    __table_args__ = (
+        # Anti double-count (same principle as funding_snapshot, section 16):
+        # one row per terminal per channel per snapshot date.
+        UniqueConstraint("snapshot_date", "channel", "terminal_id", name="uq_merchant_snapshot_key"),
+        Index("ix_merchant_snapshot_date_pn", "snapshot_date", "resolved_pn"),
     )
 
 

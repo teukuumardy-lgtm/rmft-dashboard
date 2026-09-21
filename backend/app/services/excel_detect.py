@@ -87,6 +87,33 @@ HEADER_SYNONYMS = {
         "renewal": ["RENEW"],
         "balance_idr": ["CBALBASE"],
     },
+    "EDC": {
+        # NOTE: in the real export, PERIODE is a month string ("2026-08"), not
+        # a parseable date — POSISI carries the actual snapshot date (e.g. a
+        # datetime for 31/08/2026). snapshot_date must come from POSISI.
+        "snapshot_date": ["POSISI"],
+        "periode_month": ["PERIODE"],
+        "uker_name": ["NAMAUKER"],
+        "terminal_id": ["TID"],
+        "merchant_ref": ["MID"],
+        "merchant_name": ["NAMAMERCHANT"],
+        "pemrakarsa": ["NAMAUSERPEMRAKARSA"],
+        "sales_volume": ["SALESVOLUME"],
+        "account_number": ["NOREK"],
+    },
+    "QRIS": {
+        # Same PERIODE/POSISI split as EDC — see note above.
+        "snapshot_date": ["POSISI"],
+        "periode_month": ["PERIODE"],
+        "uker_name": ["BRDESC"],
+        "terminal_id": ["STOREID"],
+        "merchant_ref": ["MERCHANTPAN"],
+        "merchant_name": ["NAMAMERCHANT"],
+        "pemrakarsa": ["PNPEMRAKASA", "PNPEMRAKARSA"],
+        "status": ["STATUS"],
+        "sales_volume": ["POSISISVTOTAL"],
+        "account_number": ["NOREK"],
+    },
 }
 
 # Fields that MUST be present in a header row for it to be considered a
@@ -95,6 +122,8 @@ REQUIRED_FIELDS = {
     "TABUNGAN": ["snapshot_date", "account_number", "balance_original", "customer"],
     "GIRO": ["snapshot_date", "account_number", "balance_original", "customer"],
     "DEPOSITO": ["snapshot_date", "account_number", "principal", "customer"],
+    "EDC": ["snapshot_date", "terminal_id", "sales_volume", "account_number"],
+    "QRIS": ["snapshot_date", "terminal_id", "sales_volume", "account_number"],
 }
 
 

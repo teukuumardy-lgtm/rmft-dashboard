@@ -7,14 +7,84 @@ from app.audit import log_action
 from app.database import get_db
 from app.deps import require_admin
 from app.models import (
-    AccountRmftAssignment, AuditLog, FundingSnapshot, RawImport, ReportType,
-    RmftMaster, UploadBatch, UploadStatus, User, UserRole,
+    AccountRmftAssignment, AuditLog, FundingSnapshot, MerchantChannel, RawImport,
+    ReportType, RmftMaster, UploadBatch, UploadStatus, User, UserRole,
 )
-from app.schemas import OwnershipOverride, UserCreate, UserUpdate
+from app.schemas import MerchantThresholdUpdate, OwnershipOverride, RmftCreate, RmftUpdate, UserCreate, UserUpdate
 from app.security import hash_password
-from app.services import funding_calc
+from app.services import funding_calc, merchant_calc
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+
+# ---------------------------------------------------------------------------
+# Section 1: RMFT master (edit RMFT name / activate-deactivate / add new PN)
+# ---------------------------------------------------------------------------
+@router.get("/rmft")
+def list_rmft_master(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Unlike GET /rmft (active-only, any logged-in user), this includes
+    inactive PNs too, since admin needs to see and reactivate them."""
+    return db.query(RmftMaster).order_by(RmftMaster.rmft_name).all()
+
+
+@router.post("/rmft")
+def create_rmft_master(payload: RmftCreate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    if not payload.pn.isdigit() or len(payload.pn) != 8:
+        raise HTTPException(status_code=400, detail="PN harus 8 digit angka")
+    if db.query(RmftMaster).filter(RmftMaster.pn == payload.pn).first():
+        raise HTTPException(status_code=400, detail="PN sudah terdaftar di master RMFT")
+    row = RmftMaster(pn=payload.pn, rmft_name=payload.rmft_name, active=payload.active)
+    db.add(row)
+    db.commit()
+    log_action(db, admin.username, "CREATE", "rmft_master", record=payload.pn, after=payload.rmft_name)
+    return row
+
+
+@router.put("/rmft/{pn}")
+def update_rmft_master(pn: str, payload: RmftUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    """Edit nama RMFT dan/atau status aktif. Nama yang diubah di sini langsung
+    dipakai di seluruh dashboard (funding_snapshot.resolved_rmft, leaderboard,
+    laporan, dst) sejak upload/perhitungan berikutnya — data historis yang
+    sudah tersimpan (snapshot lama) tetap memakai nama pada saat itu diproses,
+    supaya laporan periode lalu tidak berubah retroaktif tanpa sepengetahuan admin."""
+    row = db.query(RmftMaster).filter(RmftMaster.pn == pn).first()
+    if not row:
+        raise HTTPException(status_code=404, detail="PN tidak ditemukan di master RMFT")
+    before = f"{row.rmft_name} (active={row.active})"
+    if payload.rmft_name is not None:
+        row.rmft_name = payload.rmft_name
+    if payload.active is not None:
+        row.active = payload.active
+    db.commit()
+    log_action(db, admin.username, "UPDATE", "rmft_master", record=pn, before=before,
+               after=f"{row.rmft_name} (active={row.active})")
+    return row
+
+
+# ---------------------------------------------------------------------------
+# EDC / QRIS: productivity thresholds (admin-editable policy, not hardcoded)
+# ---------------------------------------------------------------------------
+@router.get("/merchant-thresholds")
+def get_merchant_thresholds(db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    return [
+        {"channel": ch.value, "min_productive_volume": float(merchant_calc.get_threshold(db, ch))}
+        for ch in (MerchantChannel.EDC, MerchantChannel.QRIS)
+    ]
+
+
+@router.put("/merchant-thresholds")
+def update_merchant_threshold(payload: MerchantThresholdUpdate, db: Session = Depends(get_db), admin: User = Depends(require_admin)):
+    try:
+        channel = MerchantChannel(payload.channel)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Channel harus EDC atau QRIS")
+    if payload.min_productive_volume < 0:
+        raise HTTPException(status_code=400, detail="Nilai minimum tidak boleh negatif")
+    before = float(merchant_calc.get_threshold(db, channel))
+    merchant_calc.set_threshold(db, channel, payload.min_productive_volume, admin.id)
+    log_action(db, admin.username, "UPDATE", "merchant_threshold", record=channel.value,
+               before=str(before), after=str(payload.min_productive_volume))
+    return {"channel": channel.value, "min_productive_volume": payload.min_productive_volume}
 
 
 # ---------------------------------------------------------------------------

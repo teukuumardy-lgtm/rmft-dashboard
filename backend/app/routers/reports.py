@@ -17,6 +17,34 @@ MEDIA_TYPES = {
 }
 
 
+@router.get("/preview")
+def preview_report(
+    report: str,
+    pn: str | None = None,
+    month: str | None = None,
+    date_from: date | None = None,
+    date_to: date | None = None,
+    date_: date | None = Query(None, alias="date"),
+    mode: str = Query("MTD", pattern="^(MTD|DTD)$"),
+    limit: int = 20,
+    status: str | None = None,
+    db: Session = Depends(get_db),
+    user: User = Depends(get_current_user),
+):
+    """Same dispatcher as /export, but returns the report as JSON so the
+    frontend can show it inline before the user decides to download it
+    (e.g. 'Report per RMFT' on the RMFT profile page)."""
+    scoped_pn = user.pn if user.role == UserRole.RMFT else pn
+    params = {
+        "pn": scoped_pn, "month": month, "date_from": date_from, "date_to": date_to,
+        "date": date_, "mode": mode, "limit": limit, "status": status,
+    }
+    try:
+        return report_export.build_report_rows(db, report, params)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
 @router.get("/export")
 def export_report(
     report: str,
