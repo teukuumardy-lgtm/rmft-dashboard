@@ -3,7 +3,80 @@ import { Link, useParams } from "react-router-dom";
 import { api } from "../api/client";
 import ExportButtons from "../components/ExportButtons";
 import FundingKpiGrid from "../components/FundingKpiGrid";
-import { formatPercent, formatShort } from "../utils/format";
+import { formatFull, formatPercent, formatShort } from "../utils/format";
+
+function currentMonth() {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function RmftProfileReport({ pn }) {
+  const [month, setMonth] = useState(currentMonth());
+  const [report, setReport] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+
+  function load() {
+    setBusy(true);
+    setError("");
+    api.previewReport("rmft_profile", { pn, month })
+      .then(setReport)
+      .catch((err) => setError(err.message))
+      .finally(() => setBusy(false));
+  }
+
+  useEffect(load, [pn, month]);
+
+  return (
+    <div>
+      <div className="section-title" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: 8 }}>
+        <span>Report per RMFT — Kekuatan &amp; Kelemahan</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} />
+          <ExportButtons report="rmft_profile" params={{ pn, month }} />
+        </div>
+      </div>
+      <p style={{ marginTop: -6, fontSize: 13, color: "var(--text-muted)" }}>
+        Ringkasan posisi simpanan, pipeline &amp; realisasi, pendingan EDC/QRIS, serta perbandingan
+        kekuatan/kelemahan RM ini terhadap rata-rata unit — dihitung langsung dari data terkini setiap kali dibuka.
+      </p>
+
+      {error && <div className="error-text">{error}</div>}
+      {busy && !report && <div className="spinner-inline">Memuat…</div>}
+
+      {report && (
+        <div className="list-card">
+          {report.rows.map((r, i) => {
+            if (r.value === "" && r.fmt === "text" && r.metric.startsWith("—")) {
+              return (
+                <div className="list-row" key={i} style={{ background: "var(--bg-muted, #f3f5f9)" }}>
+                  <b>{r.metric.replace(/—/g, "").trim()}</b>
+                </div>
+              );
+            }
+            const isTag = r.metric.startsWith("[KEKUATAN]") || r.metric.startsWith("[KELEMAHAN]") || r.metric.startsWith("[SETARA]");
+            let valueDisplay = r.value;
+            if (r.fmt === "currency") valueDisplay = formatFull(r.value);
+            else if (r.fmt === "percent") valueDisplay = formatPercent(r.value);
+            return (
+              <div className="list-row" key={i}>
+                <span>
+                  {isTag ? (
+                    <span className={`pill ${r.metric.startsWith("[KEKUATAN]") ? "pos" : r.metric.startsWith("[KELEMAHAN]") ? "neg" : "warn"}`} style={{ marginRight: 8 }}>
+                      {r.metric.match(/\[(.*?)\]/)[1]}
+                    </span>
+                  ) : null}
+                  {isTag ? r.metric.replace(/^\[.*?\]\s*/, "") : r.metric}
+                </span>
+                <span className="meta">{valueDisplay}</span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function RmftDetail() {
   const { pn } = useParams();
@@ -80,6 +153,8 @@ export default function RmftDetail() {
           Lihat detail Target vs Achievement RMFT ini di menu <Link to="/target">Target</Link>.
         </p>
       </div>
+
+      <RmftProfileReport pn={pn} />
     </div>
   );
 }

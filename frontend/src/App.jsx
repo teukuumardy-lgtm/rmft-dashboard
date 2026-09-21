@@ -8,6 +8,7 @@ import Customer360 from "./pages/Customer360";
 import DailyAction from "./pages/DailyAction";
 import Home from "./pages/Home";
 import Login from "./pages/Login";
+import Merchant from "./pages/Merchant";
 import MonthlyReport from "./pages/MonthlyReport";
 import More from "./pages/More";
 import Pipeline from "./pages/Pipeline";
@@ -36,6 +37,7 @@ export default function App() {
         <Route path="/" element={<Home />} />
         <Route path="/funding" element={<RmftList />} />
         <Route path="/funding/:pn" element={<RmftDetail />} />
+        <Route path="/merchant" element={<Merchant />} />
         <Route path="/rmft-performance" element={<RmftPerformance />} />
         <Route path="/upload" element={<Protected adminOnly><Upload /></Protected>} />
         <Route path="/more" element={<More />} />

@@ -3,11 +3,208 @@ import { api } from "../api/client";
 import { formatDate, formatFull } from "../utils/format";
 
 const TABS = [
+  { key: "rmft", label: "RMFT Master" },
   { key: "users", label: "User" },
+  { key: "merchant", label: "EDC / QRIS" },
   { key: "conflicts", label: "Ownership Conflict" },
   { key: "uploads", label: "Upload History" },
   { key: "audit", label: "Audit Trail" },
 ];
+
+function RmftMasterTab() {
+  const [rows, setRows] = useState([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+  const [editing, setEditing] = useState({}); // pn -> draft name
+  const [newForm, setNewForm] = useState({ pn: "", rmft_name: "" });
+
+  function load() {
+    api.adminListRmftMaster().then(setRows).catch((err) => setError(err.message));
+  }
+  useEffect(load, []);
+
+  async function handleCreate(e) {
+    e.preventDefault();
+    setBusy("new");
+    setError("");
+    try {
+      await api.adminCreateRmft({ pn: newForm.pn, rmft_name: newForm.rmft_name, active: true });
+      setNewForm({ pn: "", rmft_name: "" });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function saveName(pn) {
+    const name = editing[pn];
+    if (!name || !name.trim()) return;
+    setBusy(pn);
+    setError("");
+    try {
+      await api.adminUpdateRmft(pn, { rmft_name: name.trim() });
+      setEditing((e) => ({ ...e, [pn]: undefined }));
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  async function toggleActive(row) {
+    setBusy(row.pn);
+    setError("");
+    try {
+      await api.adminUpdateRmft(row.pn, { active: !row.active });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div>
+      {error && <div className="error-text">{error}</div>}
+      <p style={{ marginTop: -6, fontSize: 13, color: "var(--text-muted)" }}>
+        Edit nama RMFT di sini langsung dipakai di seluruh dashboard (leaderboard, laporan, funding, dst)
+        untuk upload/perhitungan berikutnya. Snapshot historis yang sudah tersimpan tidak berubah retroaktif.
+        PN tetap menjadi kunci utama — mengubah nama tidak mengubah PN.
+      </p>
+
+      <div className="section-title">Tambah PN Baru</div>
+      <form className="card" onSubmit={handleCreate}>
+        <div className="field">
+          <label>PN (8 digit)</label>
+          <input
+            type="text" maxLength={8} value={newForm.pn}
+            onChange={(e) => setNewForm({ ...newForm, pn: e.target.value.replace(/\D/g, "") })}
+            required
+          />
+        </div>
+        <div className="field">
+          <label>Nama RMFT</label>
+          <input
+            type="text" value={newForm.rmft_name}
+            onChange={(e) => setNewForm({ ...newForm, rmft_name: e.target.value })}
+            required
+          />
+        </div>
+        <button className="btn btn-primary" type="submit" disabled={busy === "new"}>
+          {busy === "new" ? "Menyimpan…" : "Tambah RMFT"}
+        </button>
+      </form>
+
+      <div className="section-title">Daftar RMFT Master ({rows.length})</div>
+      <div className="list-card">
+        {rows.length === 0 && <div className="list-row"><span className="meta">Belum ada RMFT terdaftar.</span></div>}
+        {rows.map((r) => (
+          <div className="list-row" key={r.pn} style={{ gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div className="meta">PN {r.pn}</div>
+              <input
+                type="text"
+                value={editing[r.pn] ?? r.rmft_name}
+                onChange={(e) => setEditing((s) => ({ ...s, [r.pn]: e.target.value }))}
+                style={{ marginTop: 4, maxWidth: 280 }}
+              />
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <span className={`pill ${r.active ? "pos" : "neg"}`}>{r.active ? "Aktif" : "Nonaktif"}</span>
+              <button
+                className="btn btn-secondary" disabled={busy === r.pn}
+                onClick={() => saveName(r.pn)}
+              >
+                Simpan Nama
+              </button>
+              <button className="btn btn-secondary" disabled={busy === r.pn} onClick={() => toggleActive(r)}>
+                {r.active ? "Nonaktifkan" : "Aktifkan"}
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function MerchantThresholdTab() {
+  const [thresholds, setThresholds] = useState([]);
+  const [draft, setDraft] = useState({});
+  const [summary, setSummary] = useState([]);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState("");
+
+  function load() {
+    api.adminGetMerchantThresholds().then((t) => {
+      setThresholds(t);
+      setDraft(Object.fromEntries(t.map((x) => [x.channel, x.min_productive_volume])));
+    }).catch((err) => setError(err.message));
+    api.merchantSummary().then(setSummary).catch(() => {});
+  }
+  useEffect(load, []);
+
+  async function save(channel) {
+    setBusy(channel);
+    setError("");
+    try {
+      await api.adminUpdateMerchantThreshold({ channel, min_productive_volume: Number(draft[channel]) });
+      load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy("");
+    }
+  }
+
+  return (
+    <div>
+      {error && <div className="error-text">{error}</div>}
+      <p style={{ marginTop: -6, fontSize: 13, color: "var(--text-muted)" }}>
+        Threshold produktivitas EDC/QRIS — perubahan di sini langsung berlaku pada upload berikutnya
+        (kebijakan bisnis, bukan angka tetap di kode). Default awal: EDC ≥ Rp15.000.000, QRIS ≥ Rp50.000.
+      </p>
+      <div className="card" style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {thresholds.map((t) => (
+          <div key={t.channel} style={{ display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div className="field" style={{ margin: 0 }}>
+              <label>{t.channel} — Minimal Volume Produktif (Rp)</label>
+              <input
+                type="number" min={0} value={draft[t.channel] ?? ""}
+                onChange={(e) => setDraft((d) => ({ ...d, [t.channel]: e.target.value }))}
+                style={{ minWidth: 200 }}
+              />
+            </div>
+            <button className="btn btn-primary" disabled={busy === t.channel} onClick={() => save(t.channel)}>
+              {busy === t.channel ? "Menyimpan…" : "Simpan"}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      <div className="section-title" style={{ marginTop: 24 }}>Ringkasan Produktivitas Saat Ini</div>
+      <div className="list-card">
+        {summary.length === 0 && <div className="list-row"><span className="meta">Belum ada data EDC/QRIS.</span></div>}
+        {summary.map((s) => (
+          <div className="list-row" key={s.channel}>
+            <div>
+              <div className="name">{s.channel}</div>
+              <div className="meta">
+                Total {s.total_terminal} · Produktif {s.produktif} · Belum Produktif {s.belum_produktif} ·
+                {" "}Belum Ada Transaksi {s.tidak_ada_transaksi} · Belum Teridentifikasi PN {s.unassigned}
+              </div>
+            </div>
+            <span className="pill warn">{s.pending} pending</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function UsersTab() {
   const [users, setUsers] = useState([]);
@@ -271,7 +468,7 @@ function AuditTab() {
 }
 
 export default function Admin() {
-  const [tab, setTab] = useState("users");
+  const [tab, setTab] = useState("rmft");
 
   return (
     <div>
@@ -287,7 +484,9 @@ export default function Admin() {
           </button>
         ))}
       </div>
+      {tab === "rmft" && <RmftMasterTab />}
       {tab === "users" && <UsersTab />}
+      {tab === "merchant" && <MerchantThresholdTab />}
       {tab === "conflicts" && <ConflictsTab />}
       {tab === "uploads" && <UploadsTab />}
       {tab === "audit" && <AuditTab />}

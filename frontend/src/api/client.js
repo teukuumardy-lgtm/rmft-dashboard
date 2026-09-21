@@ -194,4 +194,32 @@ export const api = {
     const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
     return request(`/admin/audit-log?${qs.toString()}`);
   },
+
+  // --- RMFT master CRUD (edit nama RMFT / tambah / nonaktifkan) ---
+  adminListRmftMaster: () => request("/admin/rmft"),
+  adminCreateRmft: (payload) => request("/admin/rmft", { method: "POST", body: payload }),
+  adminUpdateRmft: (pn, payload) => request(`/admin/rmft/${pn}`, { method: "PUT", body: payload }),
+
+  // --- EDC/QRIS productivity thresholds (admin-editable policy) ---
+  adminGetMerchantThresholds: () => request("/admin/merchant-thresholds"),
+  adminUpdateMerchantThreshold: (payload) =>
+    request("/admin/merchant-thresholds", { method: "PUT", body: payload }),
+
+  // --- EDC/QRIS productivity data ---
+  merchantSummary: (channel, pn) => {
+    const params = new URLSearchParams();
+    if (channel) params.append("channel", channel);
+    if (pn) params.append("pn", pn);
+    return request(`/merchant/summary?${params.toString()}`);
+  },
+  merchantList: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+    return request(`/merchant/list?${qs.toString()}`);
+  },
+
+  // --- Report per RMFT (inline preview before export) ---
+  previewReport: (report, params = {}) => {
+    const qs = new URLSearchParams(Object.entries({ report, ...params }).filter(([, v]) => v !== undefined && v !== null && v !== ""));
+    return request(`/reports/preview?${qs.toString()}`);
+  },
 };

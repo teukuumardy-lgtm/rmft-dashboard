@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { path: "/pipeline", label: "Pipeline", icon: "📈", ready: true, bottom: true },
   { path: "/realisasi", label: "Realisasi", icon: "✅", ready: true, bottom: true },
   { path: "/funding", label: "Funding", icon: "💰", ready: true, bottom: true },
+  { path: "/merchant", label: "EDC / QRIS", icon: "🏪", ready: true },
   { path: "/customer", label: "Customer", icon: "🧑‍💼", ready: true },
   { path: "/rmft-performance", label: "RMFT Performance", icon: "🏆", ready: true },
   { path: "/monthly-report", label: "Monthly Report", icon: "📅", ready: true },
